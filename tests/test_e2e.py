@@ -1,6 +1,7 @@
 """Browser end-to-end tests against the real app and real models. Skipped unless OPENROUTER_API_KEY is set.
 
-Run: uv run --env-file .env pytest -m live tests/test_e2e.py
+Run: uv run --env-file .env pytest -m e2e
+(Separate from -m live: Playwright's sync API keeps an event loop running, which breaks asyncio.run() in later tests.)
 """
 import os
 import socket
@@ -12,7 +13,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 pytestmark = [
-    pytest.mark.live,
+    pytest.mark.e2e,
     pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="needs OPENROUTER_API_KEY"),
 ]
 

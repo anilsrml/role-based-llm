@@ -59,8 +59,9 @@ Log in with `isci`, `sekreter` or `patron`; the password is ignored (demo only).
 
 ```bash
 uv run pytest                              # unit + database tests, no API key needed
-uv run --env-file .env pytest -m live      # real models: guardrail evaluation set, agent, browser e2e
+uv run --env-file .env pytest -m live      # real models: guardrail evaluation set, agent
 uv run playwright install chromium         # once, before the browser tests
+uv run --env-file .env pytest -m e2e       # real models in the browser: login, answers, developer mode
 ```
 
 The default run uses Pydantic AI's `TestModel` and a fake guardrail model. The `live` tests call the real models through OpenRouter.

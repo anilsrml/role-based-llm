@@ -28,7 +28,11 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["live: calls real models through OpenRouter (needs OPENROUTER_API_KEY)"]
+markers = [
+    "live: calls real models through OpenRouter (needs OPENROUTER_API_KEY)",
+    "e2e: browser tests against the running app (needs OPENROUTER_API_KEY); run alone with -m e2e",
+]
+addopts = '-m "not e2e"'
 
 [dependency-groups]
 dev = [
