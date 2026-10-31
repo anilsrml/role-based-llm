@@ -7,7 +7,7 @@ from pydantic_ai.tools import ToolDefinition
 from rolchat.policy import can_use
 from rolchat.tools import TOOLS, Deps
 
-CHAT_MODEL = os.environ.get("CHAT_MODEL", "openrouter:anthropic/claude-sonnet-5.5")
+CHAT_MODEL = os.environ.get("CHAT_MODEL", "openrouter:deepseek/deepseek-v4.1-flash")
 
 INSTRUCTIONS = """\
 Sen bir şirketin iç asistanısın ve Türkçe cevap verirsin.

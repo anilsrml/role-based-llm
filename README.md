@@ -17,9 +17,9 @@ The answer does not reveal that the data exists.
 ```mermaid
 flowchart LR
     U[Browser] -->|login: character name| C[Chainlit]
-    C -->|role from signed session token| G{NeMo guardrail<br/>Claude Haiku 5.5}
+    C -->|role from signed session token| G{NeMo guardrail<br/>DeepSeek V4.1 Flash}
     G -->|off-topic / jailbreak| R["Bu konuda bilgim yok."]
-    G -->|company question| A[Pydantic AI agent<br/>Claude Sonnet 5.5]
+    G -->|company question| A[Pydantic AI agent<br/>DeepSeek V4.1 Flash]
     A -->|only the role's tools| T[Read-only tools]
     T -->|Casbin check again| DB[(PostgreSQL<br/>company)]
     C --> H[(PostgreSQL<br/>chainlit: chat history)]
