@@ -1,5 +1,9 @@
 import os
 
+# Without keys, Langfuse would still try to export and get 401s; turn tracing off instead.
+if not (os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY")):
+    os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
+
 import chainlit as cl
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.input_widget import Switch

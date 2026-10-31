@@ -69,3 +69,6 @@ CREATE TABLE IF NOT EXISTS feedbacks (
     "comment" TEXT,
     FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
 );
+
+-- Used by Chainlit 2.12 but missing from the documented schema.
+ALTER TABLE steps ADD COLUMN IF NOT EXISTS "autoCollapse" BOOLEAN DEFAULT false;

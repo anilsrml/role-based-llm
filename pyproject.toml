@@ -33,4 +33,5 @@ markers = ["live: calls real models through OpenRouter (needs OPENROUTER_API_KEY
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
+    "pytest-playwright>=0.10.0",
 ]
