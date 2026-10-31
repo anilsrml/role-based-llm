@@ -9,8 +9,11 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.1",
+    "asyncpg>=0.32.0",
     "casbin>=1.43.0",
+    "chainlit>=2.12.0",
     "faker>=40.44.0",
+    "greenlet>=3.5.6",
     "langchain-openai>=1.7.3",
     "nemoguardrails>=0.24.1",
     "psycopg[binary]>=3.3.6",

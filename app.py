@@ -1,0 +1,64 @@
+import os
+
+import chainlit as cl
+from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+from chainlit.input_widget import Switch
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
+from sqlalchemy import create_engine
+
+from rolchat.chat import answer, decision_panel
+from rolchat.models import TOOL_DATABASE_URL
+
+CHARACTERS = {"patron", "sekreter", "isci"}
+PANEL_AUTHOR = "Karar paneli"
+
+engine = create_engine(TOOL_DATABASE_URL)
+
+
+@cl.data_layer
+def data_layer():
+    return SQLAlchemyDataLayer(conninfo=os.environ["CHAINLIT_DATABASE_URL"])
+
+
+@cl.password_auth_callback
+def login(username: str, password: str):
+    # Demo login: the character name is enough, the password is ignored.
+    # The role then lives in Chainlit's signed session token, never in a message.
+    name = username.strip().lower()
+    if name in CHARACTERS:
+        return cl.User(identifier=name, metadata={"role": name})
+    return None
+
+
+@cl.on_chat_start
+async def start():
+    cl.user_session.set("history", [])
+    cl.user_session.set("dev_mode", False)
+    await cl.ChatSettings([Switch(id="dev_mode", label="Geliştirici modu", initial=False)]).send()
+
+
+@cl.on_settings_update
+async def settings(values):
+    cl.user_session.set("dev_mode", values["dev_mode"])
+
+
+@cl.on_chat_resume
+async def resume(thread):
+    history = []
+    for step in thread["steps"]:
+        if step["type"] == "user_message":
+            history.append(ModelRequest.user_text_prompt(step["output"]))
+        elif step["type"] == "assistant_message" and step["name"] != PANEL_AUTHOR:
+            history.append(ModelResponse(parts=[TextPart(step["output"])]))
+    cl.user_session.set("history", history)
+    cl.user_session.set("dev_mode", False)
+
+
+@cl.on_message
+async def message(msg: cl.Message):
+    role = cl.user_session.get("user").metadata["role"]
+    reply = await answer(msg.content, role, cl.user_session.get("history"), engine)
+    cl.user_session.set("history", reply.history)
+    await cl.Message(content=reply.text).send()
+    if cl.user_session.get("dev_mode"):
+        await cl.Message(content=decision_panel(reply, role), author=PANEL_AUTHOR).send()
