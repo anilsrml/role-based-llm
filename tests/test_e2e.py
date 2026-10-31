@@ -51,12 +51,13 @@ def login(page: Page, url: str, character: str):
     expect(page.locator("#chat-input")).to_be_visible()
 
 
-def ask(page: Page, text: str) -> str:
+def ask(page: Page, text: str, messages: int = 1) -> str:
+    """Send text, wait for `messages` new assistant messages, return the first one."""
     answers = page.locator('[data-step-type="assistant_message"]')
     before = answers.count()
     page.fill("#chat-input", text)
     page.click("#chat-submit")
-    expect(answers).to_have_count(before + 1, timeout=ANSWER_TIMEOUT)
+    expect(answers).to_have_count(before + messages, timeout=ANSWER_TIMEOUT)
     return answers.nth(before).inner_text()
 
 
@@ -90,8 +91,8 @@ def test_developer_mode_shows_the_decision_panel(server, page: Page):
     page.click("#chat-settings-open-modal")
     page.click("#dev_mode")
     page.click("#confirm")
-    ask(page, "Son duyurular neler?")
+    ask(page, "Son duyurular neler?", messages=2)  # the answer, then the decision panel
     panel = page.locator('[data-step-type="assistant_message"]').last
-    expect(panel).to_contain_text("Rol:", timeout=ANSWER_TIMEOUT)
+    expect(panel).to_contain_text("Rol:")
     expect(panel).to_contain_text("isci")
     expect(panel).to_contain_text("list_announcements")
