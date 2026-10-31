@@ -11,6 +11,8 @@ dependencies = [
     "alembic>=1.20.1",
     "casbin>=1.43.0",
     "faker>=40.44.0",
+    "langchain-openai>=1.7.3",
+    "nemoguardrails>=0.24.1",
     "psycopg[binary]>=3.3.6",
     "pydantic-ai-slim[openrouter]>=2.64.0",
     "sqlalchemy>=2.1.6",
@@ -22,6 +24,7 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["live: calls real models through OpenRouter (needs OPENROUTER_API_KEY)"]
 
 [dependency-groups]
 dev = [

@@ -1,0 +1,13 @@
+models:
+  - type: main
+    engine: openai
+    model: anthropic/claude-haiku-5.5
+    api_key_env_var: OPENROUTER_API_KEY
+    parameters:
+      base_url: https://openrouter.ai/api/v1
+      temperature: 0
+
+rails:
+  input:
+    flows:
+      - self check input
