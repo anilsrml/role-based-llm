@@ -3,6 +3,7 @@ import os
 import chainlit as cl
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.input_widget import Switch
+from pydantic_ai import Agent
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 from sqlalchemy import create_engine
 
@@ -13,6 +14,7 @@ CHARACTERS = {"patron", "sekreter", "isci"}
 PANEL_AUTHOR = "Karar paneli"
 
 engine = create_engine(TOOL_DATABASE_URL)
+Agent.instrument_all()  # LLM and tool calls show up in Langfuse under each chat trace
 
 
 @cl.data_layer
@@ -57,7 +59,9 @@ async def resume(thread):
 @cl.on_message
 async def message(msg: cl.Message):
     role = cl.user_session.get("user").metadata["role"]
-    reply = await answer(msg.content, role, cl.user_session.get("history"), engine)
+    reply = await answer(
+        msg.content, role, cl.user_session.get("history"), engine, session_id=cl.context.session.thread_id
+    )
     cl.user_session.set("history", reply.history)
     await cl.Message(content=reply.text).send()
     if cl.user_session.get("dev_mode"):

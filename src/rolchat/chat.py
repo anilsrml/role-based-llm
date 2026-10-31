@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 
+from langfuse import get_client, observe, propagate_attributes
 from pydantic_ai.messages import ModelMessage, ToolCallPart
 from sqlalchemy import Engine
 
@@ -20,7 +21,29 @@ class Reply:
     tools_called: list[str] = field(default_factory=list)
 
 
-async def answer(text: str, role: str, history: list[ModelMessage], engine: Engine, guard=check_input) -> Reply:
+@observe(name="chat", capture_input=False, capture_output=False)
+async def answer(
+    text: str,
+    role: str,
+    history: list[ModelMessage],
+    engine: Engine,
+    guard=check_input,
+    session_id: str | None = None,
+) -> Reply:
+    # Everything under this trace (guardrail, LLM calls, tool calls) is tagged with the role.
+    with propagate_attributes(user_id=role, session_id=session_id, tags=[f"rol:{role}"]):
+        reply = await _answer(text, role, history, engine, guard)
+    langfuse = get_client()
+    langfuse.update_current_span(
+        input=text,
+        output=reply.text,
+        metadata={"blocked_by": reply.blocked_by, "tools_called": reply.tools_called},
+    )
+    langfuse.score_current_trace(name="guardrail_blocked", value=1 if reply.blocked_by else 0)
+    return reply
+
+
+async def _answer(text, role, history, engine, guard) -> Reply:
     blocked_by = await guard(text)
     if blocked_by:
         return Reply(text=REFUSAL, history=history, blocked_by=blocked_by)

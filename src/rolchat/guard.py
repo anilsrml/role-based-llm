@@ -1,6 +1,7 @@
 from functools import cache
 from pathlib import Path
 
+from langfuse import observe
 from nemoguardrails import LLMRails, RailsConfig
 from nemoguardrails.rails.llm.options import RailStatus
 
@@ -17,6 +18,7 @@ def _default_rails() -> LLMRails:
     return make_rails()
 
 
+@observe(name="guardrail", as_type="guardrail", capture_input=False)
 async def check_input(text: str, rails: LLMRails | None = None) -> str | None:
     """Return the name of the rail that blocked the message, or None if it may go to the agent."""
     result = await (rails or _default_rails()).check_async([{"role": "user", "content": text}])

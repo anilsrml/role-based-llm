@@ -15,6 +15,7 @@ dependencies = [
     "faker>=40.44.0",
     "greenlet>=3.5.6",
     "langchain-openai>=1.7.3",
+    "langfuse>=5.1.0",
     "nemoguardrails>=0.24.1",
     "psycopg[binary]>=3.3.6",
     "pydantic-ai-slim[openrouter]>=2.64.0",
