@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from pydantic_ai import RunContext
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import Engine, select
 
 from rolchat.models import (
     Announcement,
@@ -20,7 +19,7 @@ from rolchat.policy import can_use
 @dataclass
 class Deps:
     role: str
-    session: Session  # connected as tool_reader (SELECT only)
+    engine: Engine  # connects as tool_reader (SELECT only)
 
 
 def _check(ctx: RunContext[Deps], tool: str) -> None:
@@ -29,7 +28,9 @@ def _check(ctx: RunContext[Deps], tool: str) -> None:
 
 
 def _rows(ctx: RunContext[Deps], stmt) -> list[dict]:
-    return [dict(r._mapping) for r in ctx.deps.session.execute(stmt)]
+    # One connection per call: the agent may run several tools in parallel threads.
+    with ctx.deps.engine.connect() as conn:
+        return [dict(r._mapping) for r in conn.execute(stmt)]
 
 
 # Level 1

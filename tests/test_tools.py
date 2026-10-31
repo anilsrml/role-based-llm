@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy.orm import Session
 
 from rolchat import tools
 from rolchat.policy import allowed_tools
@@ -12,7 +11,7 @@ from rolchat.tools import TOOLS, Deps
 def ctx(reader_engine, seeded):
     # Tools only read ctx.deps, so a plain namespace stands in for pydantic_ai's RunContext.
     def make(role):
-        return SimpleNamespace(deps=Deps(role=role, session=Session(reader_engine)))
+        return SimpleNamespace(deps=Deps(role=role, engine=reader_engine))
     return make
 
 
