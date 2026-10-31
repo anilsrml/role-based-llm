@@ -1,0 +1,9 @@
+p, isci, list_announcements
+p, isci, get_shifts
+p, sekreter, find_employee
+p, sekreter, list_leaves
+p, sekreter, list_meetings
+p, patron, get_salaries
+p, patron, get_financial_summary
+g, sekreter, isci
+g, patron, sekreter

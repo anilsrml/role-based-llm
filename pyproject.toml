@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.1",
+    "casbin>=1.43.0",
     "faker>=40.44.0",
     "psycopg[binary]>=3.3.6",
     "sqlalchemy>=2.1.6",
