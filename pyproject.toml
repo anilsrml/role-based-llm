@@ -1,0 +1,22 @@
+[project]
+name = "rolchat"
+version = "0.1.0"
+description = "Role-based LLM chat: each character only reaches the data its role allows."
+readme = "README.md"
+authors = [
+    { name = "Anıl Sürmeli", email = "126188687+anilsrml@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]

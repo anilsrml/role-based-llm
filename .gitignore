@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.pytest_cache/
+# secrets (API keys, auth secret)
+.env
+# chainlit runtime files
+.files/
