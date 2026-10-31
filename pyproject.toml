@@ -7,7 +7,12 @@ authors = [
     { name = "Anıl Sürmeli", email = "126188687+anilsrml@users.noreply.github.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "alembic>=1.20.1",
+    "faker>=40.44.0",
+    "psycopg[binary]>=3.3.6",
+    "sqlalchemy>=2.1.6",
+]
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14.0"]
