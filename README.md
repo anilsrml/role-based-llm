@@ -1,4 +1,4 @@
-# rol-bazli-llm
+# role-based-llm
 
 Role-based LLM chat: each character (boss, secretary, worker) only reaches the company data its role allows.
 The chat UI and the data are Turkish; the code is English.
