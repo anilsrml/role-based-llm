@@ -31,13 +31,61 @@ The LLM is never the security boundary. Access is enforced in code, in two layer
 1. **The model only sees the role's tools.** `rbac_policy.csv` (Casbin, role inheritance `patron > sekreter > isci`) decides which tools the agent is offered. A worker's model has no salary tool, so it cannot fetch salaries.
 2. **Every tool checks the policy again** before it queries, so a tool still refuses if it is ever called for a role that may not use it.
 
-Further safeguards:
+## What's built
 
-- Tools read through `tool_reader`, a Postgres user with `SELECT` only. That user cannot connect to the chat history database.
-- Tools are parameterised queries; the model never writes SQL.
-- The NeMo input rail rejects off-topic requests and attempts to change the rules ("I'm actually the boss"). It never decides data access.
-- **Developer mode** (settings menu) adds a panel under each answer: role, guardrail result, tools offered, tools called.
-- Every turn is traced to Langfuse, tagged `rol:<role>`, with a `guardrail_blocked` score.
+**Stack:** Python 3.12, Chainlit, Pydantic AI, Casbin, NeMo Guardrails, SQLAlchemy 2 + Alembic, PostgreSQL 17 (Docker), Langfuse, OpenRouter (DeepSeek V4.1 Flash), pytest + Playwright.
+
+### Authentication and session
+
+- Chainlit password login (`password_auth_callback`). The character name is the login; the password is ignored (demo only).
+- The role goes into the user's metadata inside Chainlit's **signed session token** (`CHAINLIT_AUTH_SECRET`). Each turn reads the role from the token, never from the message, so "I'm the boss" in chat changes nothing.
+
+### Authorization (RBAC with Casbin)
+
+- `rbac_model.conf` + `rbac_policy.csv`: each tool is a permission, and roles inherit with `g` rules (`patron > sekreter > isci`).
+- `policy.py` has two functions: `allowed_tools(role)` (implicit permissions, inherited ones included) and `can_use(role, tool)`.
+- To give a role a new tool, add one line to the CSV. No code change.
+
+### Tool calling (Pydantic AI agent)
+
+- Seven read-only tools in `tools.py`, one per data area: announcements, shifts, employee contacts, leaves, meetings, salaries, financial summary.
+- **Layer 1:** each tool has a `prepare` hook that hides it from the model when the role may not use it. The model does not know the tool exists.
+- **Layer 2:** each tool calls the policy again before it queries and raises `PermissionError` on a mismatch.
+- Typed tool arguments (`date`, `team`, `name`, `limit`) and Turkish docstrings become the tool schema the model sees.
+- The system prompt makes the model answer only from tool results, and say only "Bu konuda bilgim yok." when it cannot. Today's date is added on each run, so "who is on leave today?" works.
+- Multi-turn memory: the Pydantic AI message history is kept per chat and rebuilt from the database when an old chat is opened again.
+
+### Database access
+
+- SQLAlchemy 2 models with a level per table (`TABLE_LEVELS`), an Alembic migration, and a seed script that fills fake Turkish company data with Faker (fixed seed, so runs repeat).
+- Two Postgres users, set up in `db/init.sql`:
+  - `tool_reader`: `SELECT` only on the `company` database. The agent's tools connect as this user.
+  - `chainlit`: owns a separate `chainlit` database for chat history. `tool_reader` cannot connect to it.
+- Tools build parameterised queries with SQLAlchemy; the model never writes SQL. Each call opens its own connection, because the agent can run tools in parallel.
+
+### Guardrails (NeMo Guardrails)
+
+- A `self check input` rail runs before the agent. It blocks off-topic requests, jailbreaks and attempts to change the rules.
+- A blocked message gets the same refusal as missing data. The rail never decides data access; that stays in code.
+- An evaluation set of company questions and off-topic/jailbreak messages (`tests/test_live.py`, `-m live`) checks the rail against the real model.
+
+### Chat UI and history
+
+- Chainlit chat with persistent history in Postgres (`SQLAlchemyDataLayer`): past chats show in the sidebar and can be continued.
+- **Developer mode** (settings switch) adds a "Karar paneli" message under each answer: role, guardrail result, tools offered, tools called.
+
+### Observability (Langfuse)
+
+- Each chat turn is one trace, tagged `rol:<role>`, with the user and session id.
+- The guardrail step, every LLM call and every tool call show up as child spans (`Agent.instrument_all()`).
+- Each trace gets a `guardrail_blocked` score (0 or 1), so blocked turns can be filtered and counted.
+- Tracing turns off by itself when Langfuse keys are empty.
+
+### Tests
+
+- **Unit and database** (default `pytest`, no API key): policy rules per role; migration, seed and `tool_reader` (can `SELECT`, cannot `INSERT`) on a real test database; each tool's permission check; agent tool visibility with Pydantic AI's `TestModel`; chat flow and history with a fake guardrail.
+- **Live** (`-m live`): the guardrail evaluation set, and the agent with the real model (a worker gets no salary data, the boss gets the real figures).
+- **End-to-end** (`-m e2e`): Playwright logs in as a worker and as the boss in a real browser and checks refusals, answers, impersonation attempts and the developer panel.
 
 ## Run it
 
