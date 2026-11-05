@@ -14,6 +14,12 @@ The chat UI and the data are Turkish; the code is English.
 Anything outside a character's reach gets the same answer: **"Bu konuda bilgim yok."** ("I have no information on this.")
 The answer does not reveal that the data exists.
 
+Same question, two roles (developer mode on, so the decision panel shows under each answer):
+
+| Worker: refused, no salary tool offered | Boss: real figure, `get_salaries` called |
+|---|---|
+| ![Worker asks for salaries and gets the refusal](docs/worker-refused.png) | ![Boss asks for the top salary and gets it](docs/boss-answer.png) |
+
 ## How it works
 
 ```mermaid
@@ -22,8 +28,9 @@ flowchart LR
     C -->|role from signed session token| G{NeMo guardrail<br/>DeepSeek V4.1 Flash}
     G -->|off-topic / jailbreak| R["Bu konuda bilgim yok."]
     G -->|company question| A[Pydantic AI agent<br/>DeepSeek V4.1 Flash]
-    A -->|only the role's tools| T[Read-only tools]
-    T -->|Casbin check again| DB[(PostgreSQL<br/>company)]
+    A -->|layer 1: only the role's tools| T[Read-only tools]
+    T -->|"layer 2: Casbin check again<br/>layer 3: as reader_l1/l2/l3"| DB[(PostgreSQL<br/>company)]
+    A -->|reply sanitised| C
     C --> H[(PostgreSQL<br/>chainlit: chat history)]
     A -.traces.-> L[Langfuse]
 ```
