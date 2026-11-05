@@ -11,10 +11,61 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "company"]
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "company"] # TCP: the init-time server is socket only
       interval: 2s
       timeout: 3s
       retries: 15
+
+  # `docker compose --profile app up`: the whole app. Plain `docker compose up` stays Postgres only.
+  chainlit-schema:
+    profiles: [app]
+    image: postgres:17
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: chainlit
+      PGPASSWORD: chainlit
+      PGDATABASE: chainlit
+    volumes:
+      - ./db/chainlit_schema.sql:/chainlit_schema.sql:ro
+    # The schema file cannot run twice, so load it only once.
+    command: ["sh", "-c", "psql -tAc \"SELECT to_regclass('users')\" | grep -q users || psql -v ON_ERROR_STOP=1 -f /chainlit_schema.sql"]
+
+  setup:
+    profiles: [app]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &db-urls
+      ADMIN_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/company
+      TOOL_DATABASE_URL: postgresql+psycopg://tool_reader:tool_reader@postgres:5432/company
+      CHAINLIT_DATABASE_URL: postgresql+asyncpg://chainlit:chainlit@postgres:5432/chainlit
+    # The seed adds rows on every run, so seed only an empty database.
+    command:
+      - sh
+      - -c
+      - >-
+        alembic upgrade head &&
+        if python -c 'from sqlalchemy import create_engine, func, select; from rolchat.models import ADMIN_DATABASE_URL, Employee; exit(create_engine(ADMIN_DATABASE_URL).connect().scalar(select(func.count()).select_from(Employee)) > 0)';
+        then python -m rolchat.seed; else echo Already seeded; fi
+
+  app:
+    profiles: [app]
+    build: .
+    depends_on:
+      chainlit-schema:
+        condition: service_completed_successfully
+      setup:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env
+        required: false
+    environment: *db-urls
+    ports:
+      - "8000:8000"
 
 volumes:
   pgdata:
