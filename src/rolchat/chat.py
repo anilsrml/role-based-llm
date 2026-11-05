@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from langfuse import get_client, observe, propagate_attributes
+from pydantic_ai import UsageLimitExceeded, UsageLimits
 from pydantic_ai.messages import ModelMessage, ToolCallPart
 from sqlalchemy import Engine
 
@@ -10,6 +11,8 @@ from rolchat.policy import allowed_tools
 from rolchat.tools import Deps
 
 REFUSAL = "Bu konuda bilgim yok."
+# Unbounded consumption (OWASP LLM10): a runaway tool loop stops after a few model requests.
+USAGE_LIMITS = UsageLimits(request_limit=5)
 
 
 @dataclass
@@ -48,7 +51,12 @@ async def _answer(text, role, history, engine, guard) -> Reply:
     if blocked_by:
         return Reply(text=REFUSAL, history=history, blocked_by=blocked_by)
 
-    result = await agent.run(text, deps=Deps(role=role, engine=engine), message_history=history)
+    try:
+        result = await agent.run(
+            text, deps=Deps(role=role, engine=engine), message_history=history, usage_limits=USAGE_LIMITS
+        )
+    except UsageLimitExceeded:
+        return Reply(text=REFUSAL, history=history, tools_offered=sorted(allowed_tools(role)))
     called = [
         part.tool_name
         for msg in result.new_messages()

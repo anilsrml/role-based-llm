@@ -1,6 +1,8 @@
 import asyncio
 
 import pytest
+from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 
 from rolchat.agent import agent
@@ -57,3 +59,17 @@ def test_decision_panel_shows_role_guard_and_tools(ask):
 
     panel = decision_panel(ask("vardiya?", "isci"), "isci")
     assert "get_shifts" in panel
+
+
+def test_runaway_tool_loop_hits_the_usage_limit_and_gets_the_refusal(reader_engine, seeded):
+    calls = []
+
+    def loop_forever(messages, info):
+        calls.append(1)
+        return ModelResponse(parts=[ToolCallPart("get_shifts", {})])
+
+    with agent.override(model=FunctionModel(loop_forever)):
+        reply = asyncio.run(answer("vardiya?", "isci", [], reader_engine, guard=guard_passes))
+
+    assert reply.text == REFUSAL
+    assert len(calls) <= 5

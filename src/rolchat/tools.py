@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import date
+from typing import Annotated
 
+from pydantic import Field
 from pydantic_ai import RunContext
 from sqlalchemy import Engine, select
 
@@ -15,6 +17,10 @@ from rolchat.models import (
 )
 from rolchat.policy import can_use
 
+# Unbounded consumption (OWASP LLM10): the model cannot ask for more rows than this.
+MAX_ROWS = 50
+Limit = Annotated[int, Field(ge=1, le=MAX_ROWS)]
+Months = Annotated[int, Field(ge=1, le=24)]
 
 @dataclass
 class Deps:
@@ -36,7 +42,7 @@ def _rows(ctx: RunContext[Deps], stmt) -> list[dict]:
 # Level 1
 
 
-def list_announcements(ctx: RunContext[Deps], limit: int = 5) -> list[dict]:
+def list_announcements(ctx: RunContext[Deps], limit: Limit = 5) -> list[dict]:
     """Şirket duyurularını en yeniden eskiye listeler."""
     _check(ctx, "list_announcements")
     a = Announcement
@@ -47,7 +53,7 @@ def get_shifts(ctx: RunContext[Deps], day: date | None = None, team: str | None 
     """Vardiya planı. day verilmezse tüm plan; team ile ekip (ör. Montaj) seçilebilir."""
     _check(ctx, "get_shifts")
     s = Shift
-    stmt = select(s.day, s.name, s.start_time, s.end_time, s.team).order_by(s.day, s.start_time)
+    stmt = select(s.day, s.name, s.start_time, s.end_time, s.team).order_by(s.day, s.start_time).limit(MAX_ROWS)
     if day:
         stmt = stmt.where(s.day == day)
     if team:
@@ -106,7 +112,7 @@ def get_salaries(ctx: RunContext[Deps], name: str = "") -> list[dict]:
     return _rows(ctx, stmt)
 
 
-def get_financial_summary(ctx: RunContext[Deps], months: int = 12) -> list[dict]:
+def get_financial_summary(ctx: RunContext[Deps], months: Months = 12) -> list[dict]:
     """Aylık gelir, gider, kâr ve kasa durumu; en yeni aydan geriye months kadar."""
     _check(ctx, "get_financial_summary")
     f = FinancialSummary
