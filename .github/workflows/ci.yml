@@ -1,0 +1,35 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      # Same credentials and host port as docker-compose.yml, so the default URLs in models.py work.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: company
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d company"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # Services start before checkout, so init.sql cannot be mounted; run it here instead.
+      - name: Create database users
+        run: psql -v ON_ERROR_STOP=1 -h localhost -p 5433 -U postgres -d company -f db/init.sql
+        env:
+          PGPASSWORD: postgres
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: "0.13.5"
+      - run: uv sync
+      # No OPENROUTER_API_KEY here, so live tests skip; e2e is excluded by addopts.
+      - run: uv run pytest
