@@ -2,7 +2,7 @@ import os
 from datetime import date, datetime, time
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, Text
+from sqlalchemy import URL, ForeignKey, Numeric, Text, make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Fallbacks match .env.example so local runs work without a .env file.
@@ -13,7 +13,8 @@ TOOL_DATABASE_URL = os.environ.get(
     "TOOL_DATABASE_URL", "postgresql+psycopg://tool_reader:tool_reader@localhost:5433/company"
 )
 
-# 1 = isci, 2 = sekreter, 3 = patron. A role sees its level and below.
+# A role sees its level and below.
+ROLE_LEVELS = {"isci": 1, "sekreter": 2, "patron": 3}
 TABLE_LEVELS = {
     "announcements": 1,
     "shifts": 1,
@@ -23,6 +24,12 @@ TABLE_LEVELS = {
     "salaries": 3,
     "financial_summary": 3,
 }
+
+
+def reader_url(level: int) -> URL:
+    # SELECT-only user of one level (created by the reader_levels migration); same server as tool_reader.
+    name = f"reader_l{level}"
+    return make_url(TOOL_DATABASE_URL).set(username=name, password=name)
 
 
 class Base(DeclarativeBase):

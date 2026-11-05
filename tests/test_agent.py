@@ -4,14 +4,15 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from rolchat.agent import agent
+from rolchat.models import ROLE_LEVELS
 from rolchat.policy import allowed_tools
 from rolchat.tools import Deps
 
 
 @pytest.fixture
-def deps(reader_engine, seeded):
+def deps(level_engines, seeded):
     def make(role):
-        return Deps(role=role, engine=reader_engine)
+        return Deps(role=role, engine=level_engines[ROLE_LEVELS[role]])
     return make
 
 
@@ -40,3 +41,14 @@ def test_instructions_carry_todays_date_and_the_refusal_sentence(deps):
     instructions = result.all_messages()[0].instructions
     assert date.today().isoformat() in instructions
     assert "Bu konuda bilgim yok." in instructions
+
+
+def test_tool_schema_caps_row_counts(deps):
+    # Unbounded consumption: the model cannot ask for 100000 rows.
+    model = TestModel(call_tools=[])
+    with agent.override(model=model):
+        agent.run_sync("merhaba", deps=deps("patron"))
+
+    params = {t.name: t.parameters_json_schema["properties"] for t in model.last_model_request_parameters.function_tools}
+    assert params["list_announcements"]["limit"] | {"minimum": 1, "maximum": 50} == params["list_announcements"]["limit"]
+    assert params["get_financial_summary"]["months"] | {"minimum": 1, "maximum": 24} == params["get_financial_summary"]["months"]

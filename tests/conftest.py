@@ -6,7 +6,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, make_url, text
 
-from rolchat.models import ADMIN_DATABASE_URL, TOOL_DATABASE_URL
+from rolchat.models import ADMIN_DATABASE_URL, TOOL_DATABASE_URL, reader_url
 
 ROOT = Path(__file__).resolve().parents[1]
 TEST_DB = os.environ.get("TEST_DB", "company_test")  # set per worktree so parallel runs do not collide
@@ -44,6 +44,15 @@ def reader_engine(engine):
     reader = create_engine(TOOL_TEST_URL)
     yield reader
     reader.dispose()
+
+
+@pytest.fixture(scope="session")
+def level_engines(engine):
+    # One SELECT-only user per role level, on the test database.
+    engines = {level: create_engine(reader_url(level).set(database=TEST_DB)) for level in (1, 2, 3)}
+    yield engines
+    for e in engines.values():
+        e.dispose()
 
 
 @pytest.fixture(scope="session")

