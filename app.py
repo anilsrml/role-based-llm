@@ -7,17 +7,19 @@ if not (os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRE
 import chainlit as cl
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.input_widget import Switch
+from langfuse import Langfuse
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 from sqlalchemy import create_engine
 
-from rolchat.chat import answer, decision_panel
+from rolchat.chat import answer, decision_panel, mask_level3_spans
 from rolchat.models import ROLE_LEVELS, reader_url
 
 CHARACTERS = {"patron", "sekreter", "isci"}
 PANEL_AUTHOR = "Karar paneli"
 
 engines = {level: create_engine(reader_url(level)) for level in set(ROLE_LEVELS.values())}
+Langfuse(mask_otel_spans=mask_level3_spans)  # created first, so get_client() returns this masked client
 Agent.instrument_all()  # LLM and tool calls show up in Langfuse under each chat trace
 
 

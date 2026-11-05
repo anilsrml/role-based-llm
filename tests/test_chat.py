@@ -1,13 +1,15 @@
 import asyncio
+import json
 
 import pytest
+from langfuse.types import MaskOtelSpansParams, OtelSpanData, OtelSpanIdentifier
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import create_engine
 
 from rolchat.agent import agent
-from rolchat.chat import REFUSAL, answer, decision_panel, sanitize
+from rolchat.chat import REFUSAL, answer, decision_panel, mask_level3_spans, sanitize
 from rolchat.models import reader_url
 from rolchat.policy import allowed_tools
 
@@ -110,3 +112,44 @@ def test_every_reply_is_sanitized(level_engines, seeded):
         reply = asyncio.run(answer("duyuru?", "isci", [], level_engines, guard=guard_passes))
 
     assert reply.text == "Duyuru yok. "
+
+
+def _span(span_id, **attributes):
+    ident = OtelSpanIdentifier(trace_id="0" * 32, span_id=span_id)
+    data = OtelSpanData("0" * 32, span_id, None, "span", "pydantic-ai", None, attributes, {})
+    return ident, data
+
+
+def _messages(tool, result):
+    # Shape of gen_ai.input.messages / pydantic_ai.all_messages written by Pydantic AI.
+    return json.dumps([
+        {"role": "user", "parts": [{"type": "text", "content": "maaşlar?"}]},
+        {"role": "user", "parts": [{"type": "tool_call_response", "id": "1", "name": tool, "result": result}]},
+    ])
+
+
+def test_mask_hides_level_3_tool_data_in_traces():
+    secret = [{"full_name": "Ali", "monthly_gross": "987654.00"}]
+    spans = dict([
+        _span("1" * 16, **{"gen_ai.tool.name": "get_salaries", "gen_ai.tool.call.result": json.dumps(secret)}),
+        _span("2" * 16, **{
+            "gen_ai.input.messages": _messages("get_financial_summary", secret),
+            "gen_ai.output.messages": json.dumps([{"role": "assistant", "parts": [{"type": "text", "content": "987654"}]}]),
+        }),
+        _span("3" * 16, **{"pydantic_ai.all_messages": _messages("get_salaries", secret), "final_result": "987654"}),
+        _span("4" * 16, **{"gen_ai.tool.name": "get_shifts", "gen_ai.tool.call.result": "[]"}),
+        _span("5" * 16, **{"gen_ai.input.messages": _messages("list_announcements", [])}),
+        _span("6" * 16, **{  # our own chat span (answer())
+            "langfuse.observation.metadata.tools_called": json.dumps(["get_salaries"]),
+            "langfuse.observation.output": json.dumps("Ali 987654 TL alıyor."),
+        }),
+    ])
+
+    patches = mask_level3_spans(params=MaskOtelSpansParams(spans=spans)).span_patches
+
+    masked = {ident.span_id[0]: patch.set_attributes for ident, patch in patches.items() if patch}
+    assert set(masked) == {"1", "2", "3", "6"}  # level-1 tool data stays visible
+    for ident, data in spans.items():
+        if ident.span_id[0] in masked:
+            exported = {**data.attributes, **masked[ident.span_id[0]]}
+            assert "987654" not in json.dumps(exported)

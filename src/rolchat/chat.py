@@ -1,7 +1,9 @@
+import json
 import re
 from dataclasses import dataclass, field
 
 from langfuse import get_client, observe, propagate_attributes
+from langfuse.types import MaskOtelSpansParams, MaskOtelSpansResult, OtelSpanPatch
 from pydantic_ai import UsageLimitExceeded, UsageLimits
 from pydantic_ai.messages import ModelMessage, ToolCallPart
 from sqlalchemy import Engine
@@ -26,6 +28,43 @@ _REF_DEF = re.compile(r"^ {0,3}\[[^\]]+\]:.*$", re.MULTILINE)
 
 def sanitize(text: str) -> str:
     return _REF_DEF.sub("", _LINK.sub(r"\1", _IMAGE.sub("", text)))
+
+
+# Sensitive information disclosure (OWASP LLM02): level-3 tool data (salaries, financials) stays out of
+# Langfuse. A span that carries a level-3 tool result, or the model's answer built from one, keeps its
+# structure but loses its content.
+LEVEL3_TOOLS = allowed_tools("patron") - allowed_tools("sekreter")
+MASKED = "[gizli: seviye 3]"
+_CONTENT = (
+    "gen_ai.tool.call.result",
+    "gen_ai.input.messages",
+    "gen_ai.output.messages",
+    "pydantic_ai.all_messages",
+    "final_result",
+    "langfuse.observation.output",
+)
+
+
+def _has_level3_data(attrs) -> bool:
+    if attrs.get("gen_ai.tool.name") in LEVEL3_TOOLS:
+        return True
+    if LEVEL3_TOOLS & set(json.loads(attrs.get("langfuse.observation.metadata.tools_called", "[]"))):
+        return True
+    return any(
+        part.get("type") == "tool_call_response" and part.get("name") in LEVEL3_TOOLS
+        for key in ("gen_ai.input.messages", "pydantic_ai.all_messages")
+        for msg in json.loads(attrs.get(key, "[]"))
+        for part in msg.get("parts", [])
+    )
+
+
+def mask_level3_spans(*, params: MaskOtelSpansParams) -> MaskOtelSpansResult:
+    # If this raises (bad JSON), Langfuse drops the whole batch: fails closed.
+    return MaskOtelSpansResult(span_patches={
+        ident: OtelSpanPatch(set_attributes={k: json.dumps(MASKED) for k in _CONTENT if k in span.attributes})
+        for ident, span in params.spans.items()
+        if _has_level3_data(span.attributes)
+    })
 
 
 @dataclass
