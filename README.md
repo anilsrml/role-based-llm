@@ -1,5 +1,7 @@
 # role-based-llm
 
+[![CI](https://github.com/anilsrml/role-based-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/anilsrml/role-based-llm/actions/workflows/ci.yml)
+
 Role-based LLM chat: each character (boss, secretary, worker) only reaches the company data its role allows.
 The chat UI and the data are Turkish; the code is English.
 
@@ -89,11 +91,19 @@ The LLM is never the security boundary. Access is enforced in code, in two layer
 
 ## Run it
 
-Needs Docker, [uv](https://docs.astral.sh/uv/) and an [OpenRouter](https://openrouter.ai/keys) API key. Langfuse keys are optional.
+Needs Docker and an [OpenRouter](https://openrouter.ai/keys) API key. Langfuse keys are optional.
 
 ```bash
 cp .env.example .env          # then fill in OPENROUTER_API_KEY and CHAINLIT_AUTH_SECRET
-docker compose up -d --wait
+docker compose --profile app up --build   # http://localhost:8000
+```
+
+This starts Postgres, loads the chat history schema, runs the migration, seeds an empty database and starts the app.
+
+Without Docker for the app (needs [uv](https://docs.astral.sh/uv/)):
+
+```bash
+docker compose up -d --wait   # Postgres only
 docker compose exec -T postgres psql -U chainlit -d chainlit < db/chainlit_schema.sql
 uv sync
 uv run alembic upgrade head
@@ -113,6 +123,7 @@ uv run --env-file .env pytest -m e2e       # real models in the browser: login, 
 ```
 
 The default run uses Pydantic AI's `TestModel` and a fake guardrail model. The `live` tests call the real models through OpenRouter.
+GitHub Actions (`.github/workflows/ci.yml`) runs the default tests on every push and pull request, against a Postgres 17 service.
 
 ## Layout
 
