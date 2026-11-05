@@ -3,15 +3,16 @@ from types import SimpleNamespace
 import pytest
 
 from rolchat import tools
+from rolchat.models import ROLE_LEVELS
 from rolchat.policy import allowed_tools
 from rolchat.tools import TOOLS, Deps
 
 
 @pytest.fixture
-def ctx(reader_engine, seeded):
+def ctx(level_engines, seeded):
     # Tools only read ctx.deps, so a plain namespace stands in for pydantic_ai's RunContext.
     def make(role):
-        return SimpleNamespace(deps=Deps(role=role, engine=reader_engine))
+        return SimpleNamespace(deps=Deps(role=role, engine=level_engines[ROLE_LEVELS[role]]))
     return make
 
 

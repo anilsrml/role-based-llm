@@ -25,7 +25,7 @@ Months = Annotated[int, Field(ge=1, le=24)]
 @dataclass
 class Deps:
     role: str
-    engine: Engine  # connects as tool_reader (SELECT only)
+    engine: Engine  # connects as the role level's reader (SELECT only, its level and below)
 
 
 def _check(ctx: RunContext[Deps], tool: str) -> None:

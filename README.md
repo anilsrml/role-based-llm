@@ -58,8 +58,9 @@ The LLM is never the security boundary. Access is enforced in code, in two layer
 ### Database access
 
 - SQLAlchemy 2 models with a level per table (`TABLE_LEVELS`), an Alembic migration, and a seed script that fills fake Turkish company data with Faker (fixed seed, so runs repeat).
+- **Layer 3:** one Postgres user per role level, `reader_l1`, `reader_l2`, `reader_l3`, created by an Alembic migration. Each can `SELECT` only the tables at or below its level (`TABLE_LEVELS`), and a chat turn connects as the user of the role's level. So even a buggy tool cannot read salaries for a worker.
 - Two Postgres users, set up in `db/init.sql`:
-  - `tool_reader`: `SELECT` only on the `company` database. The agent's tools connect as this user.
+  - `tool_reader`: `SELECT` only on the `company` database (all tables). The tools no longer use it.
   - `chainlit`: owns a separate `chainlit` database for chat history. `tool_reader` cannot connect to it.
 - Tools build parameterised queries with SQLAlchemy; the model never writes SQL. Each call opens its own connection, because the agent can run tools in parallel.
 

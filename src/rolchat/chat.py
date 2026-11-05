@@ -7,6 +7,7 @@ from sqlalchemy import Engine
 
 from rolchat.agent import agent
 from rolchat.guard import check_input
+from rolchat.models import ROLE_LEVELS
 from rolchat.policy import allowed_tools
 from rolchat.tools import Deps
 
@@ -29,13 +30,13 @@ async def answer(
     text: str,
     role: str,
     history: list[ModelMessage],
-    engine: Engine,
+    engines: dict[int, Engine],
     guard=check_input,
     session_id: str | None = None,
 ) -> Reply:
     # Everything under this trace (guardrail, LLM calls, tool calls) is tagged with the role.
     with propagate_attributes(user_id=role, session_id=session_id, tags=[f"rol:{role}"]):
-        reply = await _answer(text, role, history, engine, guard)
+        reply = await _answer(text, role, history, engines, guard)
     langfuse = get_client()
     langfuse.update_current_span(
         input=text,
@@ -46,14 +47,18 @@ async def answer(
     return reply
 
 
-async def _answer(text, role, history, engine, guard) -> Reply:
+async def _answer(text, role, history, engines, guard) -> Reply:
     blocked_by = await guard(text)
     if blocked_by:
         return Reply(text=REFUSAL, history=history, blocked_by=blocked_by)
 
     try:
         result = await agent.run(
-            text, deps=Deps(role=role, engine=engine), message_history=history, usage_limits=USAGE_LIMITS
+            text,
+            # Third layer: the database user of the role's level cannot read higher-level tables.
+            deps=Deps(role=role, engine=engines[ROLE_LEVELS[role]]),
+            message_history=history,
+            usage_limits=USAGE_LIMITS,
         )
     except UsageLimitExceeded:
         return Reply(text=REFUSAL, history=history, tools_offered=sorted(allowed_tools(role)))

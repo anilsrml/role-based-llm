@@ -4,14 +4,15 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from rolchat.agent import agent
+from rolchat.models import ROLE_LEVELS
 from rolchat.policy import allowed_tools
 from rolchat.tools import Deps
 
 
 @pytest.fixture
-def deps(reader_engine, seeded):
+def deps(level_engines, seeded):
     def make(role):
-        return Deps(role=role, engine=reader_engine)
+        return Deps(role=role, engine=level_engines[ROLE_LEVELS[role]])
     return make
 
 

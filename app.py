@@ -12,12 +12,12 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 from sqlalchemy import create_engine
 
 from rolchat.chat import answer, decision_panel
-from rolchat.models import TOOL_DATABASE_URL
+from rolchat.models import ROLE_LEVELS, reader_url
 
 CHARACTERS = {"patron", "sekreter", "isci"}
 PANEL_AUTHOR = "Karar paneli"
 
-engine = create_engine(TOOL_DATABASE_URL)
+engines = {level: create_engine(reader_url(level)) for level in set(ROLE_LEVELS.values())}
 Agent.instrument_all()  # LLM and tool calls show up in Langfuse under each chat trace
 
 
@@ -64,7 +64,7 @@ async def resume(thread):
 async def message(msg: cl.Message):
     role = cl.user_session.get("user").metadata["role"]
     reply = await answer(
-        msg.content, role, cl.user_session.get("history"), engine, session_id=cl.context.session.thread_id
+        msg.content, role, cl.user_session.get("history"), engines, session_id=cl.context.session.thread_id
     )
     cl.user_session.set("history", reply.history)
     await cl.Message(content=reply.text).send()
