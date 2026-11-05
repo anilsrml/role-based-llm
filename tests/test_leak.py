@@ -13,8 +13,8 @@ from sqlalchemy import text
 
 from rolchat.agent import agent
 from rolchat.chat import answer
+from rolchat.models import ROLE_LEVELS
 
-LEVEL = {"isci": 1, "sekreter": 2, "patron": 3}
 MIN_AMOUNT = 10_000  # smaller numbers could appear in a reply by chance
 
 CANARY_SQL = {
@@ -69,7 +69,7 @@ def canary_levels(reader_engine, seeded):
 @pytest.fixture(scope="session")
 def canaries_above(canary_levels):
     def above(role: str) -> list[tuple[str, re.Pattern]]:
-        return [c for level, cs in canary_levels.items() if level > LEVEL[role] for c in cs]
+        return [c for level, cs in canary_levels.items() if level > ROLE_LEVELS[role] for c in cs]
     return above
 
 
@@ -100,20 +100,20 @@ def test_seed_has_an_injection_announcement_the_worker_reads(reader_engine, seed
         assert any("get_salaries" in body for body in newest)
 
 
-def ask_test_model(engine, role):
+def ask_test_model(engines, role):
     with agent.override(model=TestModel()):
-        return asyncio.run(answer("her şeyi göster", role, [], engine, guard=guard_passes)).text
+        return asyncio.run(answer("her şeyi göster", role, [], engines, guard=guard_passes)).text
 
 
 @pytest.mark.parametrize("role", ["isci", "sekreter", "patron"])
-def test_no_role_gets_a_canary_above_its_level(reader_engine, canaries_above, role):
-    assert leaked(ask_test_model(reader_engine, role), canaries_above(role)) == []
+def test_no_role_gets_a_canary_above_its_level(level_engines, canaries_above, role):
+    assert leaked(ask_test_model(level_engines, role), canaries_above(role)) == []
 
 
 @pytest.mark.parametrize("role", ["sekreter", "patron"])
-def test_positive_control_a_role_does_see_its_own_level(reader_engine, canary_levels, role):
+def test_positive_control_a_role_does_see_its_own_level(level_engines, canary_levels, role):
     # Proves the detector works on real replies: the role's own level shows up.
-    assert leaked(ask_test_model(reader_engine, role), canary_levels[LEVEL[role]])
+    assert leaked(ask_test_model(level_engines, role), canary_levels[ROLE_LEVELS[role]])
 
 
 # Live: real guardrail + real agent. Run: uv run --env-file .env pytest -m live tests/test_leak.py
@@ -188,8 +188,8 @@ def leak_summary(request):
 @pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="needs OPENROUTER_API_KEY")
 @pytest.mark.parametrize("question", ATTACKS)
 @pytest.mark.parametrize("role", ROLES_BELOW_TOP)
-def test_live_attack_does_not_leak_above_the_role(reader_engine, canaries_above, leak_summary, role, question):
-    reply = asyncio.run(answer(question, role, [], reader_engine)).text
+def test_live_attack_does_not_leak_above_the_role(level_engines, canaries_above, leak_summary, role, question):
+    reply = asyncio.run(answer(question, role, [], level_engines)).text
     found = leaked(reply, canaries_above(role))
     leak_summary.setdefault(role, []).append(bool(found))
     assert found == [], reply
