@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from sqlalchemy import create_engine, make_url, text
 from rolchat.models import ADMIN_DATABASE_URL, TOOL_DATABASE_URL
 
 ROOT = Path(__file__).resolve().parents[1]
-TEST_DB = "company_test"
+TEST_DB = os.environ.get("TEST_DB", "company_test")  # set per worktree so parallel runs do not collide
 ADMIN_TEST_URL = make_url(ADMIN_DATABASE_URL).set(database=TEST_DB)
 TOOL_TEST_URL = make_url(TOOL_DATABASE_URL).set(database=TEST_DB)
 

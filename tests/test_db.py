@@ -1,3 +1,5 @@
+import os
+
 import psycopg
 import pytest
 from sqlalchemy import inspect, text
@@ -46,3 +48,8 @@ def test_tool_reader_can_select_but_not_insert(reader_engine):
             "INSERT INTO announcements (title, body, published_on) VALUES ('x', 'y', current_date)"
         ))
     assert isinstance(exc.value.orig, psycopg.errors.InsufficientPrivilege)
+
+
+def test_test_database_name_comes_from_env(engine):
+    # Parallel worktrees set TEST_DB so their runs do not drop each other's database.
+    assert engine.url.database == os.environ.get("TEST_DB", "company_test")
